@@ -7,6 +7,7 @@ from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 import nltk
 import transformers
+import tensorflow as tf
 
 from .preprocessing import tokenize_text
 
@@ -80,12 +81,12 @@ def process_data_for_transformers(text, bpetokenizer, tokenizer, max_len, target
     if target_text:
         #target_text = " " + " ".join(str(target_text).split())
 
-        len_st = len(target_text) - 1
+        len_st = len(target_text)
         idx0 = None
         idx1 = None
 
-        for ind in (i for i, e in enumerate(text) if e == target_text[1]):
-            if " " + text[ind: ind+len_st] == target_text:
+        for ind in (i for i, e in enumerate(text) if e == target_text[0]):
+            if text[ind: ind+len_st] == target_text:
                 idx0 = ind
                 idx1 = ind + len_st - 1
                 break
@@ -95,14 +96,19 @@ def process_data_for_transformers(text, bpetokenizer, tokenizer, max_len, target
             for ct in range(idx0, idx1 + 1):
                 char_targets[ct] = 1
     
-    if bpetokenizer:
-        tok_text = bpetokenizer.encode(text, max_length=max_len)
-        input_ids_orig = tok_text.ids
-        text_offsets = tok_text.offsets
+    if text == '':
+        tok_text = []
+        input_ids_orig = []
+        text_offsets = []
     else:
-        tok_text = tokenizer.encode(text, max_length=max_len)
-        input_ids_orig = tokenizer.encode(text, max_length=max_len)
-        text_offsets = [(0,0)] * len(tok_text)
+        if bpetokenizer:
+            tok_text = bpetokenizer.encode(text)
+            input_ids_orig = tok_text.ids
+            text_offsets = tok_text.offsets
+        else:
+            tok_text = tokenizer.encode(text, max_length=max_len, add_special_tokens=False)
+            input_ids_orig = tokenizer.encode(text, max_length=max_len, add_special_tokens=False)
+            text_offsets = [(0,0)] * len(tok_text)
     
     if target_text:
         target_idx = []
@@ -152,7 +158,7 @@ def process_data_for_transformers(text, bpetokenizer, tokenizer, max_len, target
             'label': None
         }
 
-def process_data_for_transformers_conditional(text, label, all_labels, bpetokenizer, tokenizer, max_len, target_text=None):
+def process_data_for_transformers_conditional(text, label, all_labels, bpetokenizer, tokenizer, max_len, concat_type='pre', target_text=None):
     #text = " " + " ".join(str(text).split())
     targets_start = 0
     targets_end = 0
@@ -160,12 +166,12 @@ def process_data_for_transformers_conditional(text, label, all_labels, bpetokeni
     if target_text:
         #target_text = " " + " ".join(str(target_text).split())
 
-        len_st = len(target_text) - 1
+        len_st = len(target_text)
         idx0 = None
         idx1 = None
 
-        for ind in (i for i, e in enumerate(text) if e == target_text[1]):
-            if " " + text[ind: ind+len_st] == target_text:
+        for ind in (i for i, e in enumerate(text) if e == target_text[0]):
+            if text[ind: ind+len_st] == target_text:
                 idx0 = ind
                 idx1 = ind + len_st - 1
                 break
@@ -176,22 +182,25 @@ def process_data_for_transformers_conditional(text, label, all_labels, bpetokeni
                 char_targets[ct] = 1
     
     if bpetokenizer:
-        tok_text = bpetokenizer.encode(text, max_length=max_len)
+        tok_text = bpetokenizer.encode(text)
         input_ids_orig = tok_text.ids
         text_offsets = tok_text.offsets
+        tok_label = bpetokenizer.encode(label).ids
     else:
-        tok_text = tokenizer.encode(text, max_length=max_len)
-        input_ids_orig = tokenizer.encode(text, max_length=max_len)
+        tok_text = tokenizer.encode(text, max_length=max_len, add_special_tokens=False)
+        input_ids_orig = tokenizer.encode(text, max_length=max_len, add_special_tokens=False)
         text_offsets = [(0,0)] * len(tok_text)
+        tok_label = tokenizer.encode(label, max_length=max_len, add_special_tokens=False)
     
     all_label_ids = {}
 
-    for _label in all_labels:
-        _label_id = tokenizer.encode(_label)
-        if len(_label_id) == 3:
-            all_label_ids[_label] = _label_id[1]
-        else:
-            all_label_ids[_label] = tokenizer.unk_token_id
+    if len(all_labels) > 0:
+        for _label in all_labels:
+            _label_id = tokenizer.encode(_label)
+            if len(_label_id) == 3:
+                all_label_ids[_label] = _label_id[1]
+            else:
+                all_label_ids[_label] = tokenizer.unk_token_id
 
     if target_text:
         target_idx = []
@@ -202,12 +211,24 @@ def process_data_for_transformers_conditional(text, label, all_labels, bpetokeni
         targets_start = target_idx[0]
         targets_end = target_idx[-1]
 
-    input_ids = [0] + [all_label_ids[label]] + [2] + input_ids_orig + [2]
-    token_type_ids = [0, 0, 0] + [0] * (len(input_ids_orig) + 1)
-    mask = [1] * len(token_type_ids)
-    text_offsets = [(0, 0)] * 3 + text_offsets + [(0, 0)]
-    targets_start += 3
-    targets_end += 3
+    if len(all_label_ids) > 0:
+        if concat_type == 'pre':
+            input_ids = [0] + [all_label_ids[label]] + [2] + input_ids_orig + [2]
+            token_type_ids = [0, 0, 0] + [0] * (len(input_ids_orig) + 1)
+            mask = [1] * len(token_type_ids)
+            text_offsets = [(0, 0)] * 3 + text_offsets + [(0, 0)]
+            targets_start += 3
+            targets_end += 3
+        else:
+            input_ids = [0] + input_ids_orig + [2] + [all_label_ids[label]] + [2]
+            token_type_ids = [0] * len(input_ids)
+            mask = [1] * len(token_type_ids)
+            text_offsets = [(0, 0)] + text_offsets + [(0, 0)]*3
+    else:
+        input_ids = [0] + input_ids_orig + [2] + tok_label + [2]
+        token_type_ids = [0] * len(input_ids)
+        mask = [1] * len(token_type_ids)
+        text_offsets = [(0, 0)] + text_offsets + [(0, 0)]*(len(tok_label) + 2)
 
     padding_length = max_len - len(input_ids)
     if padding_length > 0:
@@ -242,8 +263,8 @@ def process_data_for_transformers_conditional(text, label, all_labels, bpetokeni
         }
 
 class TransformerDataset:
-    def __init__(self, text, bpetokenizer, tokenizer, MAX_LEN, target_label=None, tokenizer_target=False,
-                sequence_target=False, target_text=None, conditional_label=None, conditional_all_labels=None):
+    def __init__(self, text, bpetokenizer, tokenizer, MAX_LEN, target_label=None, tokenize_target=False,
+                sequence_target=False, target_text=None, conditional_label=None, conditional_all_labels=None, concat_type='pre'):
         
         self.text = text
         self.target_label = target_label
@@ -254,7 +275,8 @@ class TransformerDataset:
         self.max_len = MAX_LEN
         self.conditional_all_labels = conditional_all_labels
         self.sequence_target = sequence_target
-        self.tokenizer_target = tokenizer_target
+        self.tokenize_target = tokenize_target
+        self.concat_type = concat_type
 
         if target_label is None:
             self.target_label = [None]*len(self.text)
@@ -279,9 +301,10 @@ class TransformerDataset:
 
         if conditional_label:
             d = process_data_for_transformers_conditional(text, conditional_label, self.conditional_all_labels,
-                                                 self.bpetokenizer, self.tokenizer, self.max_len, target_text)
+                                                 self.bpetokenizer, self.tokenizer, self.max_len, self.concat_type, target_text)
         else:
             d = process_data_for_transformers(text, self.bpetokenizer, self.tokenizer, self.max_len, target_text) 
+
 
         if d["label"] is None:
             d["label"] = 0
@@ -300,7 +323,18 @@ class TransformerDataset:
 
                 target_label = target_label[:self.max_len]
 
-            if self.tokenizer_target:
+                if type(target_label[0]) == int:
+                    target_type = torch.long
+                else:
+                    target_type = torch.float
+
+            if self.sequence_target == False:
+                if type(target_label) == int:
+                    target_type = torch.long
+                else:
+                    target_type = torch.float
+
+            if self.tokenize_target:
 
                 target_dict = process_data_for_transformers(target_label, self.bpetokenizer, self.max_len)
 
@@ -309,8 +343,8 @@ class TransformerDataset:
                         "mask": torch.tensor(d['mask'], dtype=torch.long),
                         "token_type_ids": torch.tensor(d['token_type_ids'], dtype=torch.long),
                         "targets": torch.tensor(target_dict['ids'], dtype=torch.long),
-                        "targets_start": torch.tensor(d["targets_start"], dtype=torch.float),
-                        "targets_end": torch.tensor(d["targets_end"], dtype=torch.float)
+                        "targets_start": torch.tensor(d["targets_start"], dtype=torch.long),
+                        "targets_end": torch.tensor(d["targets_end"], dtype=torch.long)
                     }
             else:
 
@@ -318,9 +352,9 @@ class TransformerDataset:
                         "ids": torch.tensor(d['ids'], dtype=torch.long),
                         "mask": torch.tensor(d['mask'], dtype=torch.long),
                         "token_type_ids": torch.tensor(d['token_type_ids'], dtype=torch.long),
-                        "targets": torch.tensor(target_label, dtype=torch.float),
-                        "targets_start": torch.tensor(d["targets_start"], dtype=torch.float),
-                        "targets_end": torch.tensor(d["targets_end"], dtype=torch.float)
+                        "targets": torch.tensor(target_label, dtype=target_type),
+                        "targets_start": torch.tensor(d["targets_start"], dtype=torch.long),
+                        "targets_end": torch.tensor(d["targets_end"], dtype=torch.long)
                     }
         else:
             return {
@@ -328,8 +362,8 @@ class TransformerDataset:
                         "mask": torch.tensor(d['mask'], dtype=torch.long),
                         "token_type_ids": torch.tensor(d['token_type_ids'], dtype=torch.long),
                         "targets": torch.tensor(0, dtype=torch.float),
-                        "targets_start": torch.tensor(d["targets_start"], dtype=torch.float),
-                        "targets_end": torch.tensor(d["targets_end"], dtype=torch.float)
+                        "targets_start": torch.tensor(d["targets_start"], dtype=torch.long),
+                        "targets_end": torch.tensor(d["targets_end"], dtype=torch.long)
                     }    
 
 class TransformerDatasetForMNLI:

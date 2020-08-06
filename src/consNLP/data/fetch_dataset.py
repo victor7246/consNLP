@@ -8,7 +8,7 @@ from tqdm import tqdm
 #import zipfile
 import shutil
 
-def fetch_dataset(project_dir,download_from_kaggle=False, kaggle_dataset=None, download_from_s3=False, s3_bucket=None, download_from_url=False, data_url=None):
+def fetch_dataset(project_dir,download_from_kaggle=False, kaggle_dataset=None, kaggle_competition=None, download_from_s3=False, s3_bucket=None, download_from_url=False, data_url=None):
     """ Runs data processing scripts to turn raw data from (../raw) into
         cleaned data ready to be analyzed (saved in ../processed).
     """
@@ -39,6 +39,9 @@ def fetch_dataset(project_dir,download_from_kaggle=False, kaggle_dataset=None, d
 
         if kaggle_dataset:
             kaggle_api.dataset_download_files(kaggle_dataset,output_path,unzip=True)
+
+        if kaggle_competition:
+            kaggle_api.competition_download_files(kaggle_competition,path=output_path)
 
     if download_from_s3:
         import boto3

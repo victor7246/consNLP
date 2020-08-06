@@ -7,6 +7,162 @@ from sklearn.utils import check_array
 import numpy as np
 from scipy.stats import spearmanr
 
+try:
+    from pytorch_lightning.metrics.metric import NumpyMetric
+    class PLMetric(NumpyMetric):
+
+        def __init__(self, metric_name, convert=None, reshape=False):
+            super(PLMetric, self).__init__(metric_name)
+            self.scorer = get_scorer(metric_name)
+            self.convert = convert
+            self.reshape = reshape
+
+        def forward(self,*args):
+            if len(args) == 2:
+                x = args[0]
+                y = args[1]
+
+                x = np.array(x)
+                y = np.array(y)
+
+                if self.convert == 'round':
+                    x = np.round(x)
+                    y = np.round(y)
+                if self.convert == 'max':
+                    #x = np.argmax(x, -1)
+                    y = np.argmax(y, -1)
+                if self.convert == 'min':
+                    #x = np.argmin(x, -1)
+                    y = np.argmin(y, -1)
+
+                if self.reshape:
+                    x = x.reshape(-1,1)
+                    y = y.reshape(-1,1)
+
+                return self.scorer(x,y)
+
+            elif len(args) == 4:
+                x1 = args[0]
+                x2 = args[1]
+                y1 = args[2]
+                y2 = args[3]
+
+                x1 = np.array(x1)
+                x2 = np.array(x2)
+                y1 = np.array(y1)
+                y2 = np.array(y2)
+
+                if self.convert == 'round':
+                    x1 = np.round(x1)
+                    x2 = np.round(x2)
+                    y1 = np.round(y1)
+                    y2 = np.round(y2)
+                if self.convert == 'max':
+                    #x = np.argmax(x, -1)
+                    y1 = np.argmax(y1, -1)
+                    y2 = np.argmax(y2, -1)
+                if self.convert == 'min':
+                    #x = np.argmin(x, -1)
+                    y1 = np.argmin(y1, -1)
+                    y2 = np.argmin(y2, -1)
+
+                if self.reshape:
+                    x1 = x1.reshape(-1,1)
+                    x2 = x2.reshape(-1,1)
+                    y1 = y1.reshape(-1,1)
+                    y2 = y2.reshape(-1,1)
+
+                return self.scorer(x1,x2,y1,y2)
+            
+            else:
+                raise ValueError("arguments not understood")
+
+
+except:
+    pass
+
+class SKMetric:
+    def __init__(self, metric_name, convert=None, reshape=False):
+        self.scorer = get_scorer(metric_name)
+        self.convert = convert
+        self.reshape = reshape
+
+    def __call__(self, *args):
+        if len(args) == 2:
+            x = args[0]
+            y = args[1]
+
+            x = np.array(x)
+            y = np.array(y)
+
+            if self.convert == 'round':
+                x = np.round(x)
+                y = np.round(y)
+            if self.convert == 'max':
+                #x = np.argmax(x, -1)
+                y = np.argmax(y, -1)
+            if self.convert == 'min':
+                #x = np.argmin(x, -1)
+                y = np.argmin(y, -1)
+
+            if self.reshape:
+                x = x.reshape(-1,1)
+                y = y.reshape(-1,1)
+
+            return self.scorer(x,y)
+
+        elif len(args) == 4:
+            x1 = args[0]
+            x2 = args[1]
+            y1 = args[2]
+            y2 = args[3]
+
+            x1 = np.array(x1)
+            x2 = np.array(x2)
+            y1 = np.array(y1)
+            y2 = np.array(y2)
+
+            if self.convert == 'round':
+                x1 = np.round(x1)
+                x2 = np.round(x2)
+                y1 = np.round(y1)
+                y2 = np.round(y2)
+            if self.convert == 'max':
+                #x = np.argmax(x, -1)
+                y1 = np.argmax(y1, -1)
+                y2 = np.argmax(y2, -1)
+            if self.convert == 'min':
+                #x = np.argmin(x, -1)
+                y1 = np.argmin(y1, -1)
+                y2 = np.argmin(y2, -1)
+
+            if self.reshape:
+                x1 = x1.reshape(-1,1)
+                x2 = x2.reshape(-1,1)
+                y1 = y1.reshape(-1,1)
+                y2 = y2.reshape(-1,1)
+
+            return self.scorer(x1,x2,y1,y2)
+        
+        else:
+            raise ValueError("arguments not understood")
+
+def jaccard(l1,l2):
+    return len(set(l1).intersection(l2))*1.0/(len(l1) + len(l2) - len(set(l1).intersection(l2)))
+
+def qa_jaccard_score(target_start, target_end, output_start, output_end):
+    if type(target_start) == np.ndarray:
+        target_start = target_start.flatten()
+        target_end = target_end.flatten() 
+        output_start = output_start.flatten() 
+        output_end = output_end.flatten()
+
+        return np.mean(np.array([jaccard(np.arange(target_start[i],target_end[i]+1),np.arange(output_start[i], output_end[i]+1)) for i in range(target_start.shape[0])]))
+    
+    else:
+
+        return jaccard(np.arange(target_start,target_end+1),np.arange(output_start, output_end+1))
+
 class ranking_precision_score:
     def __init__(self, k=10):
         self.k = k
@@ -193,7 +349,8 @@ SCORERS = dict(r2_scorer=r2_scorer,
                adjusted_mutual_info_scorer=adjusted_mutual_info_scorer,
                normalized_mutual_info_scorer=normalized_mutual_info_scorer,
                ranking_precision_scorer=ranking_precision_score(k=50),
-               ndcg_scorer=ndcg_score(k=50)
+               ndcg_scorer=ndcg_score(k=50),
+               qa_jaccard=qa_jaccard_score
                )
 
 for name, metric in [('precision', precision_score),

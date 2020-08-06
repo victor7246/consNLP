@@ -1,7 +1,7 @@
 import pandas as pd
 
-def load_pandas_df(filepath, sep='\t', text_column=[], target_column=[]):
-    df = pd.read_csv(filepath, sep=sep, quotechar='"')
+def load_pandas_df(filepath, sep='\t', text_column=[], target_column=[], encoding='utf8'):
+    df = pd.read_csv(filepath, sep=sep, quotechar='"', encoding=encoding)
     '''
     rename text column to words and target column to labels
     '''
@@ -13,8 +13,8 @@ def load_pandas_df(filepath, sep='\t', text_column=[], target_column=[]):
         
     return df
 
-def load_custom_text_as_pd(filepath, sep='\t', header=True, text_column=[], target_column=[]):
-    lines = open(filepath,'r').readlines()
+def load_custom_text_as_pd(filepath, sep='\t', header=True, text_column=[], target_column=[], encoding='utf9'):
+    lines = open(filepath,'r', encoding=encoding).readlines()
     lines = [line.replace('\n','') for line in lines]
     
     if header:

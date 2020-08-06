@@ -9,7 +9,24 @@ def MAELoss(outputs, targets):
     return nn.L1Loss()(outputs, targets)
 
 def CELoss(outputs, targets):
-    return nn.CrossEntropyLoss()(outputs, targets)
+    return nn.CrossEntropyLoss()(outputs.view(-1,outputs.shape[-1]), targets.view(-1,1).view(-1).type_as(targets))
+
+class masked_CELoss(nn.Module):
+    def __init__(self):
+        super(masked_CELoss, self).__init__()
+        self.lfn = nn.CrossEntropyLoss()
+
+    def forward(self, outputs, targets, masks):
+        active_loss = masks.view(-1) == 1
+        active_logits = outputs.view(-1, outputs.shape[-1])
+        active_labels = torch.where(
+            active_loss,
+            targets.view(-1),
+            torch.tensor(self.lfn.ignore_index).type_as(targets)
+        )
+        loss = self.lfn(active_logits, active_labels.type_as(targets))
+
+        return loss
 
 def BCELoss(outputs, targets):
     return nn.BCELoss()(outputs, targets.view(-1, 1))
@@ -23,21 +40,29 @@ def KLDivLoss(outputs, targets):
     else:
         return nn.KLDivLoss()(outputs, targets)
 
+def QACELoss(start_logits, end_logits, start_positions, end_positions):
+    loss_fct = nn.CrossEntropyLoss()
+    start_loss = loss_fct(start_logits, start_positions)
+    end_loss = loss_fct(end_logits, end_positions)
+    total_loss = (start_loss + end_loss)
+
+    return total_loss
+
 class DiceLoss(nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(DiceLoss, self).__init__()
 
-    def forward(self, inputs, targets, smooth=1):
+    def forward(self, outputs, targets, smooth=1):
         
         #comment out if your model contains a sigmoid or equivalent activation layer
-        inputs = F.sigmoid(inputs)       
+        outputs = F.sigmoid(outputs)       
         
         #flatten label and prediction tensors
-        inputs = inputs.view(-1)
+        outputs = outputs.view(-1)
         targets = targets.view(-1)
         
-        intersection = (inputs * targets).sum()                            
-        dice = (2.*intersection + smooth)/(inputs.sum() + targets.sum() + smooth)  
+        intersection = (outputs * targets).sum()                            
+        dice = (2.*intersection + smooth)/(outputs.sum() + targets.sum() + smooth)  
         
         return 1 - dice
 
@@ -45,18 +70,18 @@ class DiceBCELoss(nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(DiceBCELoss, self).__init__()
 
-    def forward(self, inputs, targets, smooth=1):
+    def forward(self, outputs, targets, smooth=1):
         
         #comment out if your model contains a sigmoid or equivalent activation layer
-        inputs = F.sigmoid(inputs)       
+        outputs = F.sigmoid(outputs)       
         
         #flatten label and prediction tensors
-        inputs = inputs.view(-1)
+        outputs = outputs.view(-1)
         targets = targets.view(-1)
         
-        intersection = (inputs * targets).sum()                            
-        dice_loss = 1 - (2.*intersection + smooth)/(inputs.sum() + targets.sum() + smooth)  
-        BCE = F.binary_cross_entropy(inputs, targets, reduction='mean')
+        intersection = (outputs * targets).sum()                            
+        dice_loss = 1 - (2.*intersection + smooth)/(outputs.sum() + targets.sum() + smooth)  
+        BCE = F.binary_cross_entropy(outputs, targets, reduction='mean')
         Dice_BCE = BCE + dice_loss
         
         return Dice_BCE
@@ -65,19 +90,19 @@ class IoULoss(nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(IoULoss, self).__init__()
 
-    def forward(self, inputs, targets, smooth=1):
+    def forward(self, outputs, targets, smooth=1):
         
         #comment out if your model contains a sigmoid or equivalent activation layer
-        inputs = F.sigmoid(inputs)       
+        outputs = F.sigmoid(outputs)       
         
         #flatten label and prediction tensors
-        inputs = inputs.view(-1)
+        outputs = outputs.view(-1)
         targets = targets.view(-1)
         
         #intersection is equivalent to True Positive count
         #union is the mutually inclusive area of all labels & predictions 
-        intersection = (inputs * targets).sum()
-        total = (inputs + targets).sum()
+        intersection = (outputs * targets).sum()
+        total = (outputs + targets).sum()
         union = total - intersection 
         
         IoU = (intersection + smooth)/(union + smooth)
@@ -88,17 +113,17 @@ class FocalLoss(nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(FocalLoss, self).__init__()
 
-    def forward(self, inputs, targets, alpha=0.8, gamma=2, smooth=1):
+    def forward(self, outputs, targets, alpha=0.8, gamma=2, smooth=1):
         
         #comment out if your model contains a sigmoid or equivalent activation layer
-        inputs = F.sigmoid(inputs)       
+        outputs = F.sigmoid(outputs)       
         
         #flatten label and prediction tensors
-        inputs = inputs.view(-1)
+        outputs = outputs.view(-1)
         targets = targets.view(-1)
         
         #first compute binary cross-entropy 
-        BCE = F.binary_cross_entropy(inputs, targets, reduction='mean')
+        BCE = F.binary_cross_entropy(outputs, targets, reduction='mean')
         BCE_EXP = torch.exp(-BCE)
         focal_loss = alpha * (1-BCE_EXP)**gamma * BCE
                        
@@ -108,9 +133,9 @@ class OHEMLoss(nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(OHEMLoss, self).__init__()
 
-    def forward(self, inputs, targets, rate):
+    def forward(self, outputs, targets, rate):
         batch_size = targets.size(0) 
-        ohem_cls_loss = F.cross_entropy(inputs, targets, reduction='none', ignore_index=-1)
+        ohem_cls_loss = F.cross_entropy(outputs, targets, reduction='none', ignore_index=-1)
 
         sorted_ohem_loss, idx = torch.sort(ohem_cls_loss, descending=True)
         keep_num = min(sorted_ohem_loss.size()[0], int(batch_size*rate) )
@@ -239,9 +264,9 @@ class LovaszHingeLoss(nn.Module):
     def __init__(self, weight=None, size_average=True):
         super(LovaszHingeLoss, self).__init__()
 
-    def forward(self, inputs, targets):
-        inputs = F.sigmoid(inputs)    
-        Lovasz = lovasz_hinge(inputs, targets, per_image=False)                       
+    def forward(self, outputs, targets):
+        outputs = F.sigmoid(outputs)    
+        Lovasz = lovasz_hinge(outputs, targets, per_image=False)                       
         return Lovasz
 
 LOSSES = {'bce': BCELoss,
@@ -251,7 +276,9 @@ LOSSES = {'bce': BCELoss,
          'dice': DiceLoss,
          'dicewithbce': DiceBCELoss,
          'mse': MSELoss,
-         'mae': MAELoss}
+         'mae': MAELoss,
+         'masked_ce': masked_CELoss(),
+         'qa_ce': QACELoss}
 
 def get_loss(loss_name):
     """Get a loss from string.

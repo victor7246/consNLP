@@ -102,7 +102,8 @@ def plot_top_words_conditional(texts, labels, vectorizer=default_vectorizer,topk
     top_words_df = top_words_df.groupby(['label']).mean().reset_index(drop=False)
     #print (top_words_df.head(5))
 
-    top_words_df = pd.melt(top_words_df, id_vars=['label'],value_vars=list(top_words))
+    #top_words_df = pd.melt(top_words_df, id_vars=['label'],value_vars=list(top_words))
+    top_words_df = pd.melt(top_words_df, col_level=0, id_vars=['label'],value_vars=top_words_df.columns[1:])
     top_words_df.columns = ['label','top_word','word_weight']
 
     top_words_df = top_words_df.sort_values(by=['label','word_weight'],ascending=[True,True]).reset_index(drop=True)
@@ -236,11 +237,14 @@ def conditional_weights(text, model, bpetokenizer, max_alpha=3, save_path='../vi
     orig_text = text
 
     all_texts = [" ".join(text.split()[:i]) for i in range(len(text.split())+1)]
+
+    #print (all_texts)
     #all_texts = [" ".join(text.split()[:i]+text.split()[i+1:]) for i in range(len(text.split())+1)]
 
     d = {"ids":[],"mask":[],"token_type_ids":[]}
 
     for text in all_texts:
+
         d_ = data_utils.process_data_for_transformers(text,bpetokenizer,tokenizer,max_len)
         d["ids"].append(d_["ids"])
         d["mask"].append(d_["mask"])
@@ -264,6 +268,7 @@ def conditional_weights(text, model, bpetokenizer, max_alpha=3, save_path='../vi
 
     for i, word in enumerate(orig_text.split()):
 
+
         weight = weights[i]
         
         if weight is not None:
@@ -276,7 +281,9 @@ def conditional_weights(text, model, bpetokenizer, max_alpha=3, save_path='../vi
     with open(os.path.join(save_path,"conditional_weights.html") , "w") as f:
         f.write(highlighted_text)
 
-def captum_text_interpreter(text, model, bpetokenizer, idx2label, save_path='../visualizations/', max_len=80, tokenizer=None):
+    return weight
+
+def captum_text_interpreter(text, model, bpetokenizer, idx2label, max_len=80, tokenizer=None, multiclass=False):
     if type(text) == list:
         text = " ".join(text)
 
@@ -294,10 +301,16 @@ def captum_text_interpreter(text, model, bpetokenizer, idx2label, save_path='../
         orig_tokens = tokenizer.tokenize(text,add_special_tokens=True)
 
     model.eval()
-    preds_proba = torch.sigmoid(model(d["ids"],d["mask"],d["token_type_ids"])).detach().numpy()
-    preds = np.round(preds_proba)
-    preds_proba = preds_proba[0][0]
-    predicted_class = idx2label[preds[0][0]]
+    if multiclass:
+    	preds_proba = torch.sigmoid(model(d["ids"],d["mask"],d["token_type_ids"])).detach().cpu().numpy()
+    	preds = preds_proba.argmax(-1)
+    	preds_proba = preds_proba[0][preds[0][0]]
+    	predicted_class = idx2label[preds[0][0]]
+    else:
+    	preds_proba = torch.sigmoid(model(d["ids"],d["mask"],d["token_type_ids"])).detach().cpu().numpy()
+    	preds = np.round(preds_proba)
+    	preds_proba = preds_proba[0][0]
+    	predicted_class = idx2label[preds[0][0]]
 
     lig = LayerIntegratedGradients(model, model.base_model.embeddings)
     
@@ -309,7 +322,7 @@ def captum_text_interpreter(text, model, bpetokenizer, idx2label, save_path='../
     
     attributions = attributions_ig.sum(dim=2).squeeze(0)
     attributions = attributions / torch.norm(attributions)
-    attributions = attributions.cpu().detach().numpy()
+    attributions = attributions.detach().cpu().numpy()
 
     visualization.visualize_text([visualization.VisualizationDataRecord(
                             word_attributions=attributions,
