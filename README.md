@@ -7,7 +7,7 @@ A NLP toolkit for text data exploration, visualization and modeling.
 - [x] Named Entity Recognition
 - [x] Question-Answering
 - [x] Natural Language Inference (NLI)
-- [ ] Transformer encoder-decoder (text summarization)
+- [ ] Transformer encoder-decoder (text summarization/translation)
 
 ### To Do
 - [x] CPU/GPU support
