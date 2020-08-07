@@ -13,7 +13,7 @@ def load_pandas_df(filepath, sep='\t', text_column=[], target_column=[], encodin
         
     return df
 
-def load_custom_text_as_pd(filepath, sep='\t', header=True, text_column=[], target_column=[], encoding='utf9'):
+def load_custom_text_as_pd(filepath, sep='\t', header=True, text_column=[], target_column=[], encoding='utf8'):
     lines = open(filepath,'r', encoding=encoding).readlines()
     lines = [line.replace('\n','') for line in lines]
     
