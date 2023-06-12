@@ -9,7 +9,7 @@ pandas
 numpy
 tqdm
 sklearn
-transformers==2.8.0
+transformers==4.30.0
 kaggle
 boto3
 pytorch-lightning
